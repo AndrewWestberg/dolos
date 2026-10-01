@@ -1,11 +1,11 @@
 use any_chain_eval::Chain;
-use dolos_core::SubmitExt;
+use dolos_core::{EvalReport, SubmitExt};
 use futures_core::Stream;
 use futures_util::{StreamExt as _, TryStreamExt as _};
 use pallas::crypto::hash::Hash;
-use pallas::interop::utxorpc::v1beta::spec as u5c;
 use pallas::interop::utxorpc::v1beta::spec::cardano::ExUnits;
 use pallas::interop::utxorpc::v1beta::spec::submit::{WaitForTxResponse, *};
+use pallas::interop::utxorpc::v1beta::{spec as u5c, Mapper};
 use pallas::interop::utxorpc::LedgerContext;
 use std::collections::HashSet;
 use std::pin::Pin;
@@ -19,6 +19,7 @@ where
     D: Domain + LedgerContext,
 {
     domain: D,
+    mapper: Mapper<D>,
 }
 
 impl<D> SubmitServiceImpl<D>
@@ -26,7 +27,8 @@ where
     D: Domain + LedgerContext,
 {
     pub fn new(domain: D) -> Self {
-        Self { domain }
+        let mapper = Mapper::new(domain.clone());
+        Self { domain, mapper }
     }
 }
 
@@ -59,24 +61,24 @@ fn event_to_wait_for_tx_response(event: MempoolEvent) -> WaitForTxResponse {
     }
 }
 
-fn tx_eval_to_u5c(eval: Result<MempoolTx, DomainError>) -> u5c::cardano::TxEval {
+fn tx_eval_to_u5c<C: LedgerContext>(
+    eval: Result<EvalReport, DomainError>,
+    mapper: &Mapper<C>,
+) -> u5c::cardano::TxEval {
     match eval {
-        Ok(tx) => u5c::cardano::TxEval {
-            ex_units: tx.report.iter().flatten().try_fold(
-                u5c::cardano::ExUnits::default(),
-                |acc, eval| {
+        Ok(report) => u5c::cardano::TxEval {
+            ex_units: report
+                .iter()
+                .try_fold(u5c::cardano::ExUnits::default(), |acc, eval| {
                     Some(ExUnits {
                         steps: acc.steps + eval.units.steps,
                         memory: acc.memory + eval.units.mem,
                     })
-                },
-            ),
-            redeemers: tx
-                .report
+                }),
+            redeemers: report
                 .iter()
-                .flatten()
                 .map(|x| u5c::cardano::Redeemer {
-                    purpose: x.tag as i32,
+                    purpose: mapper.map_purpose(&x.tag).into(),
                     index: x.index,
                     ex_units: Some(u5c::cardano::ExUnits {
                         steps: x.units.steps,
@@ -87,7 +89,16 @@ fn tx_eval_to_u5c(eval: Result<MempoolTx, DomainError>) -> u5c::cardano::TxEval 
                 .collect(),
             fee: None,      // TODO
             traces: vec![], // TODO
-            ..Default::default()
+            errors: report
+                .iter()
+                .filter(|eval| !eval.success)
+                .map(|eval| u5c::cardano::EvalError {
+                    msg: format!(
+                        "phase-2 script rejected redeemer {:?}/{}: {:?}; {:?}",
+                        eval.tag, eval.index, eval.failure_message, eval.logs
+                    ),
+                })
+                .collect(),
         },
         Err(e) => u5c::cardano::TxEval {
             errors: vec![u5c::cardano::EvalError {
@@ -206,8 +217,8 @@ where
 
         let chain = self.domain.read_chain();
 
-        let result = self.domain.validate_tx(&chain, &tx_raw);
-        let result = tx_eval_to_u5c(result);
+        let result = self.domain.evaluate_tx(&chain, &tx_raw);
+        let result = tx_eval_to_u5c(result, &self.mapper);
 
         let report = AnyChainEval {
             chain: Some(Chain::Cardano(result)),

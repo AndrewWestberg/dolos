@@ -13,6 +13,9 @@ mod stream;
 mod v1alpha;
 mod v1beta;
 
+#[cfg(test)]
+mod tests;
+
 /// Applies the HTTP/2 transport tuning from [`GrpcConfig`] to the tonic server
 /// builder.
 ///

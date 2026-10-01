@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 
 ### 🐛 Bug Fixes
 
+- *(utxorpc)* Evaluate unsigned transactions through the existing phase-two evaluator in both `v1alpha` and `v1beta` `EvalTx` RPCs; preserve script failures and map redeemer purposes through Pallas instead of casting incompatible enum values. `EvalTx` reports script budgets, not phase-one transaction admissibility. `SubmitTx` retains full signature, fee, and script validation; no storage or configuration migration is required.
 - *(ci)* Keep the Windows job off `getrusage` (#1267)
 - *(cli)* Don't swallow driver errors (#999)
 - *(cli)* Let a fatal driver failure reach the exit status (#1269)

@@ -555,6 +555,14 @@ impl dolos_core::ChainLogic for CardanoLogic {
         utils::mutable_slots(&domain.genesis())
     }
 
+    fn evaluate_tx<D: Domain>(
+        &self,
+        cbor: &[u8],
+        utxos: &MempoolAwareUtxoStore<D>,
+    ) -> Result<dolos_core::EvalReport, ChainError> {
+        validate::evaluate_tx(cbor, utxos)
+    }
+
     fn validate_tx<D: Domain>(
         &self,
         cbor: &[u8],

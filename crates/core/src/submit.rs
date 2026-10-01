@@ -6,8 +6,8 @@
 use tracing::{debug, instrument};
 
 use crate::{
-    ChainLogic, Domain, DomainError, MempoolAwareUtxoStore, MempoolStore, MempoolTx, StateStore,
-    TxHash,
+    ChainLogic, Domain, DomainError, EvalReport, MempoolAwareUtxoStore, MempoolStore, MempoolTx,
+    StateStore, TxHash,
 };
 
 static SUBMIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -17,6 +17,14 @@ static SUBMIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// This trait extends any `Domain` implementation with methods for
 /// validating and submitting transactions to the mempool.
 pub trait SubmitExt: Domain {
+    /// Evaluate scripts against ledger and mempool inputs without requiring
+    /// signatures, phase-one acceptance, or adding the transaction to the mempool.
+    #[instrument(skip_all)]
+    fn evaluate_tx(&self, chain: &Self::Chain, cbor: &[u8]) -> Result<EvalReport, DomainError> {
+        let utxos = MempoolAwareUtxoStore::<'_, Self>::new(self.state(), self.mempool());
+        Ok(chain.evaluate_tx(cbor, &utxos)?)
+    }
+
     /// Validate a transaction against the current ledger state.
     ///
     /// Checks that the transaction is valid according to the current

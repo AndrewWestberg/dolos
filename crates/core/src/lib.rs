@@ -586,6 +586,13 @@ pub trait ChainLogic: Sized + Send + Sync {
         tip.saturating_sub(Self::mutable_slots(domain))
     }
 
+    /// Evaluate script execution units without phase-one validation or submission.
+    fn evaluate_tx<D: Domain>(
+        &self,
+        cbor: &[u8],
+        utxos: &MempoolAwareUtxoStore<D>,
+    ) -> Result<mempool::EvalReport, ChainError>;
+
     /// Validate a transaction against the current ledger state.
     fn validate_tx<D: Domain>(
         &self,
